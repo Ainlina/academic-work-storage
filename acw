@@ -1,0 +1,195 @@
+#!/usr/bin/python2.7
+import cgi,sys,mysql.connector,base64,smtplib
+from email.mime.text import MIMEText
+
+import cgitb # ONLY FOR TESTING!
+cgitb.enable()
+
+PASSWORD_WORK=12
+FILE_PREFIX='files/'
+INSTALLED_DOMAIN='http://localhost'
+
+execfile('config.txt') # import config variables
+
+class MockFormEntry:
+    value = ""
+    def __init__(self,val):
+        self.value=val
+
+def assertinform(data):
+    for datum in data:
+        assert datum in form
+
+def dbconnect(): # this function connects to the MySQL server, edit its parameters to work with a different database.
+    return mysql.connector.connect(user="www",password="webserver",database="academicwork1")
+
+def getrandom(n): # get n bytes of secure random data; only works on Unix
+    f = open('/dev/random','r')
+    randombytes = f.read(n)
+    f.close()
+    return randombytes
+
+def logincheck(userid,token,dbcursor):
+    cmd = "SELECT * FROM User WHERE UserId = %s AND UserToken = %s AND UserToken != NULL AND UserVerified = 1"
+    dbcursor.execute(cmd,(userid,token))
+    return len(dbcursor.fetchall())==1
+
+def sendemail(destination,subject,message):
+    message = MIMEText('This is an automated message from Ainlina\'s academic file storage system.</br>'+message,'html')
+    message['From'] = 'ainlinasfiles@gmail.com'
+    message['Subject'] = subject
+    message['To'] = destination
+    s = smtplib.SMTP('smtp.gmail.com:587')
+    s.starttls()
+    s.login('ainlinasfiles',EMAILPW)
+    s.sendmail('ainlinasfiles@gmail.com',destination,message.as_string())
+    s.quit()
+
+if len(sys.argv) > 1 : # this is for debugging, allows form values to be specified on the command line
+    form = {}
+    form['t'] = MockFormEntry(sys.argv[1])
+    for i in range(2,len(sys.argv),2):
+        form[sys.argv[i]]=MockFormEntry(sys.argv[i+1])
+else:
+    form = cgi.FieldStorage()
+
+
+conn = dbconnect()
+cursor = conn.cursor(buffered=True)
+
+try:
+    requesttype=form['t'].value
+except KeyError:
+    print 'Content-Type:text/html\n\nPlease specify request type (t)'
+
+if requesttype=='reg':
+    print 'Content-Type:text/html\n\n'
+    try:
+        regemail = form['regemail'].value
+        regname = form['regname'].value
+        regpw = form['regpw'].value
+    except KeyError:
+        print 'Request format error'
+        exit()
+    checkcmd = "SELECT * FROM User WHERE UserEmail = %s"
+    cursor.execute(checkcmd,(regemail,))
+    if len(cursor.fetchall())!=0:
+        print 'duplicate'
+    else:
+        import bcrypt
+        authdata = bcrypt.hashpw(regpw,bcrypt.gensalt(PASSWORD_WORK))
+        randomdata = base64.b64encode(getrandom(12))
+        regcmd = "INSERT INTO User (UserName,UserEmail,UserRandomCode,UserAuthData) VALUES (%s,%s,%s,%s)"
+        cursor.execute(regcmd,(regname,regemail,randomdata,authdata))
+        sendemail(regemail,'Ainlina\'s Academic File Storage - Email Verification','<p>Dear {3}</p><p>Thank you for registering for Ainlina\'s academic file storage.</p><p>If you meant to register, please verify your email address by clicking <a target="_blank" rel="noopener noreferrer" href="{0}/cgi-bin/acw?t=verify&useremail={1}&verifcode={2}">this link.</a></p><p>If you did not register for this service, please ignore this email. Someone else has entered your email address while registering.</p>'.format(INSTALLED_DOMAIN,regemail,randomdata,regname))
+        print 'okay'
+
+if requesttype=='verify':
+    print 'Content-Type:text/html\n\n'
+    try:
+        useremail = form['useremail'].value
+        verifcode = form['verifcode'].value
+    except KeyError:
+        print 'Request format error'
+        exit()
+    getcodecmd="UPDATE User SET UserVerified = 1 WHERE UserEmail = %s AND UserRandomCode = %s"
+    cursor.execute(getcodecmd,(useremail,verifcode))
+    print '<p>Address verified. This tab or window will now close.</p><script>window.setTimeout(function () {window.close();},2000);</script>'
+
+if requesttype=='login':
+    print 'Content-Type:text/html\n\n'
+    import bcrypt
+    try:
+        useremail = form['email'].value
+        triedpw = form['loginpw'].value
+    except KeyError:
+        print 'Request format error'
+        exit()
+    getpwcmd = "SELECT UserId,UserVerified,UserAuthData FROM User WHERE UserEmail = %s;"
+    cursor.execute(getpwcmd,(useremail,))
+    recordlist = cursor.fetchall()
+    if len(recordlist)==1:
+        userrecord = recordlist[0]
+    else:
+        print 'duplicate'
+        exit()
+    if userrecord[1]!=1:
+        print 'unverified'
+        exit()
+    if bcrypt.checkpw(triedpw,userrecord[2]):
+        token=base64.b64encode(getrandom(9))
+        settokencmd = "UPDATE User SET UserToken=%s WHERE UserId = %s;"
+        cursor.execute(settokencmd,(token,userrecord[0]))
+        print 'token '+token
+    else:
+        print 'wrong'
+
+if requesttype == 'logout':
+    print 'Content-Type:text/html\n\n'
+    logoutcmd = "UPDATE Users SET Token=NULL WHERE UserId = %s AND UserToken = %s"
+    cursor.execute(logoutcmd,(form['userid'].value,form['token'].value))
+
+if requesttype == 'home': # this could be removed, but with it, the system can operate as a single public facing page.
+    f = open('files.html','r')
+    print 'Content-Type:text/html\n\n'
+    print(f.read())
+    f.close()
+
+if requesttype == 'uploadfile':
+    print 'Content-Type:text/html\n\n'
+    try:
+        userid = form['userid'].value
+        usertoken = form['usertoken'].value
+        uploadedfile = form['file']
+        if form['named'].value=='1':
+            named = True
+            name = form['name'].value
+    except KeyError:
+        print 'Request format error'
+        exit()
+    if not logincheck(userid,usertoken,cursor):
+        print 'Bad login'
+        exit()
+    if named:
+        recordimagecmd="INSERT INTO Images (ImageUploader,ImageType,ImageName) VALUES (%s,%s,%s)"
+        cursor.execute(recordimagecmd,(userid,uploadedfile.filename[:-3],name))
+
+if requesttype == 'getimg':
+    try:
+        filename=form['filename'].value
+    except KeyError:
+        print 'Content-Type:text/html\n\nRequest format error'
+        exit()
+    from os.path import basename
+    filename = basename(filename)
+    extension = filename[-3:]
+    extensionlookup = {'txt':'text/text','png':'image/png'}
+    if extension in extensionlookup:
+        mimetype = extensionlookup[extension]
+    else:
+        print 'Content-Type:text/html\n\nInvalid file extension'
+        exit()
+    f = open(FILE_PREFIX+filename,'r')
+    print 'Content-Type:'+mimetype+'\n\n'+f.read()
+    f.close()
+
+if requesttype == 'newclass':
+    assertinform(('userid','usertoken','startdtime','duration'))
+    makeclasscmd = 'INSERT INTO Class (ClassTeacher,ClassStartMinutes,ClassDurationMinutes) VALUES (%s,%s,%s)'
+    if logincheck(form['userid'].value,form['usertoken'].value,cursor):
+        cursor.execute(makeclasscmd,(form['userid'].value,form['startdtime'].value,form['duration'].value))
+    else:
+        print 'Bad login'
+        exit()
+
+if requesttype == 'delclass':
+    assertinform(('userid','usertoken','classid'))
+    delclasscmd = 'DELETE FROM Class WHERE ClassId=%s AND ClassTeacher=%s'
+    if logincheck(form['userid'].value,form['usertoken'].value,cursor):
+        cursor.execute(delclasscmd,(form['userid'].value,form['classid'].value))
+        print 'Content-Type:text/html\n\nsuccess delclass '+form['classid'].value
+
+
+conn.commit()
+cursor.close()
+conn.close()
