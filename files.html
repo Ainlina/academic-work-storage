@@ -10,7 +10,7 @@
         <div id='statusbar' style='background-color:f0f0f0;text-align:right;cursor:default'></div>
 		<div id='menu' style='width:10%;float:left;height:100%;overflow:auto;cursor:default'></div>
 		<div id='main' style='width:90%;float:right'>
-                        <div id='home' hidden>
+            <div id='home' hidden>
                 <p>Welcome to Ainlina's academic file storage system.</p>
             </div>
             <div id='login' style='text-align:center' hidden>
@@ -35,10 +35,17 @@
                 <p>Registration successful. Please check your emails to verify your email address.</p>
                 <p>Once you have verified your email address, you will be able to log in to your account.</p>
             </div>
+            <div id='fileupload' hidden>
+                <p>Please select files to upload.</p>
+                <form id='fileuploadform'>
+                    <input type='file' id='thefile' /></input>
+                </form>
+            </div>
         </div>
-        </div>
+    </div>
 	</body>
 	<script>
+    const SERVERADDRESS = 'http://localhost/cgi-bin/acw';
     // interface constants
     const loggedoutstatusbar = 'You are currently logged out - <span onclick="showsection(\'login\')" class="link">Log in</span> or <span onclick="showsection(\'register\')" class="link">Register</span>';
     function elem(s){return document.getElementById(s);}
@@ -53,8 +60,8 @@
     }
     // menu elements
     var listone=[{clickcode:"updatemenu(toplist)",showtext:"Back"},{clickcode:'console.log(1)',showtext:"Foo Bar!"}];
-    var listtwo=[{clickcode:"updatemenu(toplist)",showtext:"Back"},{clickcode:'console.log(2)',showtext:"Foo Bar!"}];
-    var toplist=[{clickcode:"updatemenu(listone)",showtext:"List One"},{clickcode:"updatemenu(listtwo)",showtext:"List Two"},{clickcode:"showsection('login')",showtext:'Log in'}];
+    var listtwo=[{clickcode:"updatemfienu(toplist)",showtext:"Back"},{clickcode:'console.log(2)',showtext:"Foo Bar!"}];
+    var toplist=[{clickcode:"showsection('fileupload');",showtext:'Upload files'},{clickcode:"updatemenu(listone)",showtext:"List One"},{clickcode:"updatemenu(listtwo)",showtext:"List Two"},{clickcode:"showsection('login')",showtext:'Log in'}];
     
     updatemenu(toplist); // initialise menu
     
@@ -67,7 +74,7 @@
     
     // main section hiding
     sections = {};
-    ['home','login','register','registerconfirm'].map(function (str){sections[str]=elem(str)});
+    ['home','login','register','registerconfirm','fileupload'].map(function (str){sections[str]=elem(str)});
     var opensection = 'home';
     sections[opensection].hidden=false;
     function showsection(section){
@@ -79,7 +86,7 @@
     //functions to be invoked when things are clicked on
     function loginsubmit(form){
         var xhr = new XMLHttpRequest();
-        xhr.open('GET','http://localhost/cgi-bin/acw?t=login&email='+form.loginemail.value+'&loginpw='+form.loginpassword.value, true);
+        xhr.open('GET',SERVERADDRESS+'?t=login&email='+form.loginemail.value+'&loginpw='+form.loginpassword.value, true);
         xhr.onload = function () {
             response = xhr.responseText.trim();
             if (response == 'wrong'){
@@ -104,8 +111,8 @@
     function registersubmit(form){
         if (form.registerpassword.value == form.registerpasswordconfirm.value){
             var xhr = new XMLHttpRequest();
-            console.log('http://localhost/cgi-bin/acw?t=register&regemail='+form.registeremail.value+'&regname='+form.username.value+'&regpw='+form.registerpassword.value);
-            xhr.open('GET','http://localhost/cgi-bin/acw?t=reg&regemail='+form.registeremail.value+'&regname='+form.username.value+'&regpw='+form.registerpassword.value, true);
+            console.log(SERVERADDRESS+'?t=register&regemail='+form.registeremail.value+'&regname='+form.username.value+'&regpw='+form.registerpassword.value);
+            xhr.open('GET',SERVERADDRESS+'?t=reg&regemail='+form.registeremail.value+'&regname='+form.username.value+'&regpw='+form.registerpassword.value, true);
 
             xhr.onload = function () {
                 response = xhr.responseText.trim();
@@ -133,5 +140,15 @@
         token='';
         statusbar.innerHTML=loggedoutstatusbar;
     }
+
+    function uploadfile(form){
+        var xhr = new XMLHttpRequest();
+//        xhr.file=form.thefile.value;
+        xhr.open('POST',SERVERADDRESS+'?t=uploadtest',true);
+        xhr.setRequestHeader("Content-Type","multipart/form-data");
+        xhr.send(form.thefile.value);
+
+    }
+
 	</script>
 </html>

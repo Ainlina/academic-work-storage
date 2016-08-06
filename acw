@@ -189,6 +189,8 @@ if requesttype == 'delclass':
         cursor.execute(delclasscmd,(form['userid'].value,form['classid'].value))
         print 'Content-Type:text/html\n\nsuccess delclass '+form['classid'].value
 
+if requesttype == 'uploadtest': # insecure, for testing only
+    pass
 
 conn.commit()
 cursor.close()
